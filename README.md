@@ -1,6 +1,24 @@
 # rPSA
 Software package for the Revised PSA as defined by the manuscript: "Redefining Risk in Data-poor Fisheries", Grewelle et al. 2020
 
+Excel Version:
+
+Open PSABasicSoftware.xlsm and edit the colored columns.  Fishery and stock (species) labels can be made in columns 1 and 2.  Fill in necessary cells corresponding to attribute scores and weights.  Do so for both 'Productivity' and 'Susceptibility' tabs.
+
+Attributes:
+Up to 15 attributes may be included in the analysis with the unmodified spreadsheet.  Unhiding columns and editing formulas can allow incorporation of more attributes.  Leave columns blank when fewer than 15 attributes are used.  Leave cells blank when an attribute is unscored.
+
+Weights:
+Up to 15 weights may be included in the analyis with the unmodified spreadsheet.  Unhiding columns and editing formulas can allow incorporation of more weights.  Fill in the columns corresponding to the appropriate attribute (e.g. Attribute 1 -> Attribute Weight 1).  Leave columns blank when the corresponding attribute column is blank.  Weights for unscored attributes can be left blank or be given values.  Weights for unscored attributes will be ignored in the analysis.
+
+The 'Results' tab gives the resulting risk categorization with other potentially important values, including Vulnerability scores and threshold values delineating the three risk categories.  
+
+This software is a basic form of the rPSA, which assumes equal partitioning of risk categories (1/3rd each) and scoring of attributes.  Should users need to define a different scoring procedure, where values 1,2,3 are assigned unequally (e.g. 1=0-25%, 2=25-75%, 3=75-100%), or need to adjust thresholds, full software is available throught the Python package and template CSV files.
+
+-----------------------------------------------------------------------
+
+Python Version:
+
 Implementation of rPSA software requires a Python IDE such as Pycharm https://www.jetbrains.com/pycharm/.  
 An additional recommended requirement is installation of Anaconda https://docs.anaconda.com/anaconda/install/.
 
