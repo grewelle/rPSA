@@ -9,10 +9,32 @@ import numpy as np
 import csv
 import seaborn as sns; sns.set(style="white", color_codes=True)
 from scipy.stats import norm
+from scipy.stats import rankdata
 
 SMALL_SIZE = 36
 MEDIUM_SIZE = 48
 BIGGER_SIZE = 72
+
+def mscatter(x,y, ax=None, m=None, **kw):
+    import matplotlib.markers as mmarkers
+    ax = ax or plt.gca()
+    sc = ax.scatter(x,y,**kw)
+    if (m is not None) and (len(m)==len(x)):
+        paths = []
+        for marker in m:
+            if isinstance(marker, mmarkers.MarkerStyle):
+                marker_obj = marker
+            else:
+                marker_obj = mmarkers.MarkerStyle(marker)
+            path = marker_obj.get_path().transformed(
+                        marker_obj.get_transform())
+            paths.append(path)
+        sc.set_paths(paths)
+    return sc
+
+
+
+
 
 def geo_mean(iterable): # calculate a geometric mean
     a = np.array(iterable)
@@ -134,8 +156,8 @@ def multAnalysis(data, num, var, type): # multiplicative model output scores and
 
 def main():
 
-    abs_file_path = "C:/insertpathhere.csv" # path for susceptibility spreadsheet
-    abs_file_path2 = "C:/insertpathhere.csv" # path for productivity spreadsheet
+    abs_file_path = "C:/Users/Richard/Desktop/desktop/PSAReanalysis/NOAA_UnitedStates/NOAA_Susceptibility.csv" # path for susceptibility spreadsheet
+    abs_file_path2 = "C:/Users/Richard/Desktop/desktop/PSAReanalysis/NOAA_UnitedStates/NOAA_Productivity.csv" # path for productivity spreadsheet
 
 
     data, data2 = inputFile(abs_file_path, abs_file_path2)
@@ -176,7 +198,7 @@ def main():
         choiceProd = productivity
     else:
         productivity, producError, logproductivity = multAnalysis(newdata2, numProd, varianceList[2], 'prod')
-        mean[0] = np.log(2)
+        mean[0] = np.log(6)/3
         choiceProd = logproductivity
 
     if scaling[1][0] == 'a' or scaling[1][0] == 'A':
@@ -185,7 +207,7 @@ def main():
         choiceSus = susceptibility
     else:
         susceptibility, susceptError, logsusceptibility = multAnalysis(newdata, numSusc, varianceList[3], 'susc')
-        mean[1] = np.log(2)
+        mean[1] = np.log(6)/3
         choiceSus = logsusceptibility
 
 
@@ -208,6 +230,9 @@ def main():
 
     lowerThresh = norm.ppf(eval(prodThresholds[0]))
     upperThresh = norm.ppf(eval(prodThresholds[1]))
+    print(lowerThresh, upperThresh)
+    newVuln = []
+
 
     """calculate vulnerabilities based on projections to risk axis and assign categories low, medium, high"""
     for i in range(len(SEp)):
@@ -222,18 +247,19 @@ def main():
         diffp = projection_p[i] - mean[0, 0]
         diffs = projection_s[i] - mean[1, 0]
         distanceMetric.append(np.sign(diffp) * np.sqrt((diffp) ** 2 + (diffs) ** 2))
+        newVuln.append(norm.cdf(distanceMetric[i]/SEps[i]))
         if distanceMetric[i] < lowerThresh * SEps[i]:
             low += 1
             revisedCategory.append('low')
-            #print('low')
+            print('low', distanceMetric[i], lowerThresh*SEps[i], 'Vs = '+ str(newVuln[i]))
         elif lowerThresh * SEps[i] <= distanceMetric[i] < upperThresh * SEps[i]:
             medium += 1
             revisedCategory.append('medium')
-            #print('medium')
+            print('medium', distanceMetric[i], lowerThresh*SEps[i], upperThresh * SEps[i], 'Vs = '+ str(newVuln[i]))
         else:
             high += 1
             revisedCategory.append('high')
-            #print('high')
+            print('high', distanceMetric[i], upperThresh * SEps[i], 'Vs = '+ str(newVuln[i]))
 
     """calculate sPSA categories for comparison"""
 
@@ -242,35 +268,40 @@ def main():
     for g in range(len(productivity)):
         vulnerability.append(np.sqrt(productivity[g]**2+susceptibility[g]**2))
         if vulnerability[g] < 2.64:
-            print('low')
+            #print('low')
             oldCategory.append('low')
         elif 2.64 <= vulnerability[g] <= 3.18:
-            print('medium')
+            #print('medium')
             oldCategory.append('medium')
         else:
-            print('high')
+            #print('high')
             oldCategory.append('high')
 
     """output figure with colors representing changes in category from sPSA to rPSA, size gives num overlapping points"""
     markerColor = []
-    markerStyle = []
+    markertype = []
     lowerCat = 0
     higherCat = 0
     sameCat = 0
     print(oldCategory.count('low'), oldCategory.count('medium'), oldCategory.count('high'))
     print(revisedCategory.count('low'), revisedCategory.count('medium'), revisedCategory.count('high'))
+    for w in range(len(revisedCategory)):
+        if revisedCategory[w] == 'low':
+            markerColor.append('b')
+        elif revisedCategory[w] == 'medium':
+            markerColor.append('y')
+        else:
+            markerColor.append('r')
+
     for v in range(len(oldCategory)):
         if oldCategory[v] == revisedCategory[v]:
-            markerColor.append('k')
-            markerStyle.append('o')
+            markertype.append("o")
             sameCat+=1
         elif (oldCategory[v] == 'low' and revisedCategory[v] == 'medium') or (oldCategory[v] == 'medium' and revisedCategory[v] == 'high'):
-            markerColor.append('r')
-            markerStyle.append('^')
+            markertype.append(6)
             higherCat+=1
         else:
-            markerColor.append('b')
-            markerStyle.append('v')
+            markertype.append(7)
             lowerCat+=1
 
     markerArea = []
@@ -288,7 +319,8 @@ def main():
 
 
     projPlot = plt.figure(figsize=(10,10))
-    plt.scatter(productivity, susceptibility, alpha=0.4, c=markerColor, s=markerArea)
+    #plt.scatter(productivity, susceptibility, alpha=0.4, c=markerColor, s=markerArea, marker=markertype)
+    mscatter(productivity, susceptibility, m=markertype, c=markerColor, s=markerArea, alpha=0.4)
     plt.axis((1, 3, 1, 3))
     plt.xlabel('Productivity')
     plt.ylabel('Susceptibility')
@@ -303,6 +335,10 @@ def main():
     plt.show()
     projPlot.savefig("figure.png")
 
+    vulnerability = np.array(vulnerability)/(3*np.sqrt(2))
+    a = rankdata(vulnerability)
+    b = rankdata(newVuln)
+    print(sum(i != j for i, j in zip(a, b)))
 
 
 main()
