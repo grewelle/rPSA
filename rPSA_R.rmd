@@ -1,0 +1,333 @@
+---
+title: "rPSA_R"
+author: "user"
+date: "February 17, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages('reticulate')
+#install.packages('rapportools')
+#install.packages('lestat')
+library(lestat)
+library(rapportools)
+library(reticulate)
+use_condaenv("r-reticulate")
+#py_install("matplotlib", pip = TRUE)
+py_module_available("matplotlib")
+plt <- import("matplotlib.pyplot")
+#py_install("scipy", pip = TRUE)
+py_module_available("scipy")
+scipy <- import("scipy")
+
+```
+```{r inputfiles}
+susc_data <- read.csv(file = 'C:/Users/Richard/Desktop/desktop/PSAReanalysis/NOAA_UnitedStates/NOAA_Susceptibility.csv', header=FALSE)
+prod_data <- read.csv(file = 'C:/Users/Richard/Desktop/desktop/PSAReanalysis/NOAA_UnitedStates/NOAA_Productivity.csv', header=FALSE)
+
+prodScaling <- prod_data[1,2] # store scaling choice (multiplicative or additive) for productivity attributes
+suscScaling <- susc_data[1,2] # store scaling choice (multiplicative or additive) for susceptibility attributes
+scaling <- c(prodScaling, suscScaling)
+prodPercentiles <- prod_data[2,2:3] # store percentile cut-offs for attribute scores (1,2,3) for productivity attributes
+suscPercentiles <- susc_data[2,2:3] # store percentile cut-offs for attribute scores (1,2,3) for susceptibility attributes
+prodThresholds <- prod_data[2,2:3] # store productivity thresholds
+suscThresholds <- susc_data[2,2:3] # store susceptibility thresholds
+if (prodThresholds != suscThresholds){print('Warning: Thresholds in Productivity spreadsheet do not match thresholds in Susceptibility spreadsheet!')}
+
+```
+```{r geomean}
+geo_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+
+
+```
+
+```{r variance}
+varianceList <- function(prodPercentiles, suscPercentiles){
+  tempProd <- max(c(1 / prodPercentiles[1], 1 / (prodPercentiles[2] - prodPercentiles[1]), 1 / (1 - prodPercentiles[2])))
+                
+  tempSusc <- max(c(1 / suscPercentiles[1], 1 / (suscPercentiles[2] - suscPercentiles[1]), 1 / (1 - suscPercentiles[2])))
+                
+  tempBoth <- c(tempProd, tempSusc)
+  permBoth <- c(0, 0)
+  counted <- c(0, 0)
+    for (i in c(1,2)){
+        counting <- 1
+        flag <- TRUE
+        while (flag == TRUE){
+            integerCheck <- tempBoth[i] * counting
+            print(flag)
+            counting <- counting + 1
+            if (all.equal(integerCheck, as.integer(integerCheck))){
+                flag <- FALSE
+                permBoth[i] <- integerCheck
+                counted[i] <- counting
+            }
+        }
+    }
+
+  multipliersProd <- c(permBoth[1] / prodPercentiles[1], permBoth[1] / (prodPercentiles[2] - prodPercentiles[1]), permBoth[1] / (1 - prodPercentiles[2]))
+
+  multipliersSusc <- c(permBoth[1] / suscPercentiles[1], permBoth[1] / (suscPercentiles[2] - suscPercentiles[1]), permBoth[1] / (1 - suscPercentiles[2]))
+
+  addVarianceProd <- (multipliersProd[1] + multipliersProd[3]) / sum(multipliersProd)
+
+  addVarianceSusc <- (multipliersSusc[1] + multipliersSusc[3]) / sum(multipliersSusc)
+
+  multMean <- log(6) / 3
+
+  multVarianceProd <- (multipliersProd[1] * (multMean) ** 2 + multipliersProd[2] * (multMean - log(2)) ** 2 + multipliersProd[3] * (multMean - log(3)) ** 2) / sum(multipliersProd)
+
+  multVarianceSusc <- (multipliersSusc[1] * (multMean) ** 2 + multipliersSusc[2] * (multMean - log(2)) ** 2 + multipliersSusc[3] * (multMean - log(3)) ** 2) / sum(multipliersSusc)
+
+  return(c(addVarianceProd, addVarianceSusc, multVarianceProd, multVarianceSusc))
+}
+```
+
+```{r addAnalysis}
+addAnalysis <- function(data, num, var, type){ # additive model output scores and associated standard errors
+    error <- numeric()
+    scores <- numeric()
+    for(i in 1:NROW(data)){
+        
+        prescore <- numeric()
+        weight <- numeric()
+        for(j in 2:(1+num)){
+            
+            if (is.empty(data[i,j]) != TRUE){
+              
+                weight <- c(weight, as.numeric(data[i, j + num + 2]))
+                
+                for(b in 1:as.integer(data[i, j+num+2])){
+                    if (type == 'prod'){
+                        prescore <- c(prescore, 4-as.numeric(data[i, j]))
+                      
+                    } else{
+                        prescore <- c(prescore, as.numeric(data[i, j]))
+                    }
+                }
+            }
+        }
+        if (length(prescore) != 0){
+            scored <- mean(prescore)
+            scores <- c(scores, scored)
+            totalWeight <- sum(weight)
+            
+
+            for (z in 1:length(weight)){
+                weight[z] <- (weight[z]/totalWeight)^2
+            }
+            error <- c(error, (var*sum(weight))^(1/2))
+            
+            
+            
+            
+        }
+    }
+  return(list(scores, error))
+    
+}
+
+```
+
+```{r multAnalysis}
+multAnalysis <- function(data, num, var, type){ # additive model output scores and associated standard errors
+    error <- numeric()
+    scores <- numeric()
+    logscores <- numeric()
+    print(type)
+    for(i in 1:NROW(data)){
+        
+        prescore <- numeric()
+        weight <- numeric()
+        for(j in 2:(1+num)){
+            
+            if (is.empty(data[i,j]) != TRUE){
+              
+                weight <- c(weight, as.numeric(data[i, j + num + 2]))
+                
+                for(b in 1:as.integer(data[i, j+num+2])){
+                    if (type == 'prod'){
+                        prescore <- c(prescore, 4-as.numeric(data[i, j]))
+                      
+                    } else{
+                        prescore <- c(prescore, as.numeric(data[i, j]))
+                    }
+                }
+            }
+        }
+        if (length(prescore) != 0){
+            #print(prescore)
+            scored <- geo_mean(prescore)
+            logscores <- c(logscores, log(scored))
+            scores <- c(scores, scored)
+            totalWeight <- sum(weight)
+            
+
+            for (z in 1:length(weight)){
+                weight[z] <- (weight[z]/totalWeight)^2
+            }
+            error <- c(error, (var*sum(weight))^(1/2))
+            
+            
+            
+            
+        }
+    }
+  return(list(scores, error, logscores))
+    
+}
+
+
+```
+
+```{r convertData}
+
+
+for(i in seq_along(prodPercentiles)) prodPercentiles[i] <- eval(parse(text = prodPercentiles[i]))
+
+for(i in seq_along(suscPercentiles)) suscPercentiles[i] <- eval(parse(text = suscPercentiles[i]))
+
+prodPercentiles <- unlist(prodPercentiles)
+suscPercentiles <- unlist(suscPercentiles)
+
+varianceLis <- varianceList(prodPercentiles, suscPercentiles)
+
+
+numProd <- strtoi(prod_data[3,2]) # store number of productivity attributes used in analysis
+numSusc <- strtoi(susc_data[3,2]) # store number of susceptibility attributes used in analysis
+
+
+data = tail(susc_data, -6)  # exclude first row (data header)
+data2 = tail(prod_data, -6)
+data[1] <- NULL
+data2[1] <- NULL
+
+data[is.na(data)]<-''
+data2[is.na(data2)]<-''
+
+
+mean = c(2,2)
+
+scaleCodeProd <- substr(scaling[1], 1, 1)
+scaleCodeSusc <- substr(scaling[2], 1, 1)
+
+if((scaleCodeProd == 'a') | (scaleCodeProd == 'A')){
+  output <- addAnalysis(data2, numProd, varianceLis[1], 'prod')
+  productivity <- unlist(output[1], use.names=FALSE)
+  producError <- unlist(output[2], use.names=FALSE)
+  mean[1] <- 2
+  choiceProd <- productivity
+} else{
+  output <- multAnalysis(data2, numProd, varianceLis[3], 'prod')
+  productivity <- unlist(output[1], use.names=FALSE)
+  producError <- unlist(output[2], use.names=FALSE)
+  logproductivity <- unlist(output[3], use.names=FALSE)
+  mean[1] <- log(6)/3
+  choiceProd <- logproductivity}
+
+if((scaleCodeSusc == 'a') | (scaleCodeSusc == 'A')){
+  output <- addAnalysis(data, numSusc, varianceLis[2], 'susc')
+  susceptibility <- unlist(output[1], use.names=FALSE)
+  susceptError <- unlist(output[2], use.names=FALSE)
+  mean[2] <- 2
+  choiceSusc <- susceptibility
+  
+} else{
+  output <- multAnalysis(data, numSusc, varianceLis[4], 'susc')
+  susceptibility <- unlist(output[1], use.names=FALSE)
+  susceptError <- unlist(output[2], use.names=FALSE)
+  logsusceptibility <- unlist(output[3], use.names=FALSE)
+  mean[2] <- log(6)/3
+  choiceSusc <- logsusceptibility
+        
+}
+
+```
+
+```{r set variables}
+SEp <- producError
+SEs <- susceptError
+SEps <- numeric()
+riskVector <- numeric()
+
+mean <- matrix(mean)
+transformation <- numeric()
+projection <- numeric()
+projection_p <- numeric()
+projection_s <- numeric()
+distanceMetric <- numeric()
+revisedCategory <- numeric()
+low <- 0
+medium <- 0
+high <- 0
+inp1 <- eval(parse(text = as.character(prodThresholds[1])))
+inp2 <- eval(parse(text = as.character(prodThresholds[2])))
+
+
+lowerThresh <- invcdf(normal(), inp1)
+upperThresh <- invcdf(normal(), inp2)
+newVuln <- numeric()
+
+```
+
+```{r calc_rPSA_vuln}
+for(i in 1:length(SEp)){
+    SEps <- c(SEps, sqrt(2) * SEp[i] * SEs[i] / sqrt(SEp[i]^2 + SEs[i]^2))
+    riskVector <- c(riskVector, matrix(c(SEs[i], SEp[i])))
+    riskV <- matrix(c(riskVector[i*2-1], riskVector[i*2]))
+    
+    projectionMatrix <- riskV %*% (t(riskV) %*% riskV)^(-1) %*% t(riskV)
+    
+  
+                          
+    transformation <- c(transformation, mean - projectionMatrix %*% mean)
+
+    projection <- c(projection, projectionMatrix %*% matrix(c(choiceProd[i], choiceSusc[i])))
+    projection_p <- c(projection_p, projection[i*2-1] + transformation[i*2-1])
+    projection_s <- c(projection_s, projection[i*2] + transformation[i*2])
+    diffp <- projection_p[i] - mean[1]
+    diffs <- projection_s[i] - mean[2]
+    distanceMetric <- c(distanceMetric, sign(diffp) * sqrt((diffp)^2 + (diffs)^2))
+    
+    newVuln <- c(newVuln, pnorm(distanceMetric[i]/SEps[i], 0, 1))
+    
+    
+    if (distanceMetric[i] < lowerThresh * SEps[i]){
+        low <- low + 1
+        revisedCategory <- c(revisedCategory, 'low')
+        
+    } else if (lowerThresh*SEps[i] <= distanceMetric[i] & distanceMetric[i] < upperThresh*SEps[i]){
+            medium <- medium + 1
+            revisedCategory <- c(revisedCategory, 'medium')
+            
+    } else{
+            high <- high + 1
+            revisedCategory <- c(revisedCategory, 'high')
+            
+    }
+            
+
+}
+```
+
+```{r sPSA}
+vulnerability <- numeric()
+oldCategory <- numeric()
+for (g in 1:length(productivity)){
+    vulnerability <- c(vulnerability, sqrt(productivity[g]^2+susceptibility[g]^2))
+    if (vulnerability[g] < 2.64){
+        oldCategory <- c(oldCategory, 'low')
+    } else if (2.64 <= vulnerability[g] & vulnerability[g] <= 3.18){
+        oldCategory <- c(oldCategory, 'medium')
+    }  else{
+        oldCategory <- c(oldCategory, 'high')
+    }
+}
+```
+```{r basic plot}
+plot(productivity, susceptibility)
+
+```
