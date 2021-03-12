@@ -7,11 +7,19 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+#install.packages('reticulate')
 #install.packages('rapportools')
 #install.packages('lestat')
 library(lestat)
 library(rapportools)
+library(reticulate)
+use_condaenv("r-reticulate")
+#py_install("matplotlib", pip = TRUE)
+py_module_available("matplotlib")
+plt <- import("matplotlib.pyplot")
+#py_install("scipy", pip = TRUE)
+py_module_available("scipy")
+scipy <- import("scipy")
 
 ```
 ```{r inputfiles}
